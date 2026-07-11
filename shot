@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# shot — save the Windows clipboard image (e.g. from Win+Shift+S) as a PNG in WSL.
+#
+# Usage:
+#   shot                    save to ./screenshots/shot-YYYYMMDD-HHMMSS.png
+#   shot images/            save timestamped PNG into that directory
+#   shot login-bug.png      save with that name (relative or absolute path)
+#   shot images/bug.png
+set -euo pipefail
+
+timestamp="$(date +%Y%m%d-%H%M%S)"
+target="${1:-screenshots/}"
+
+# Resolve target to a full file path
+if [[ -d "$target" || "$target" == */ ]]; then
+    dest="${target%/}/shot-${timestamp}.png"
+else
+    dest="$target"
+    [[ "$dest" == *.png ]] || dest="${dest}.png"
+fi
+
+mkdir -p "$(dirname "$dest")"
+
+# Grab the clipboard image on the Windows side, save to Windows temp
+wintmp="$(powershell.exe -NoProfile -Command '
+    Add-Type -AssemblyName System.Windows.Forms | Out-Null
+    $img = [System.Windows.Forms.Clipboard]::GetImage()
+    if ($null -eq $img) { exit 2 }
+    $tmp = Join-Path $env:TEMP ("wsl-shot-" + [System.IO.Path]::GetRandomFileName() + ".png")
+    $img.Save($tmp, [System.Drawing.Imaging.ImageFormat]::Png)
+    Write-Output $tmp
+' | tr -d '\r')" || {
+    echo "shot: no image on the clipboard (take a screenshot first, e.g. Win+Shift+S)" >&2
+    exit 1
+}
+
+mv "$(wslpath -u "$wintmp")" "$dest"
+echo "$dest"
